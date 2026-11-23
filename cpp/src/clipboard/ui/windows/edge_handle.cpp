@@ -1,5 +1,6 @@
 #include "clipboard/ui/windows/edge_handle.h"
 #include "core/ui_scale.h"
+#include <QCursor>
 #include <QEnterEvent>
 #include <QGuiApplication>
 #include <QPainter>
@@ -77,9 +78,21 @@ void EdgeHandle::paintEvent(QPaintEvent *) {
     }
 }
 
+void EdgeHandle::showEvent(QShowEvent *event) {
+    QWidget::showEvent(event);
+    // Docking leaves the pointer on the strip: it has to be left once before hovering it counts,
+    // or the window would come back on the first mouse move after it was put away.
+    armed_ = !hit_rect().contains(QCursor::pos());
+}
+
 void EdgeHandle::enterEvent(QEnterEvent *event) {
     QWidget::enterEvent(event);
-    emit hovered();
+    if (armed_) emit hovered();
+}
+
+void EdgeHandle::leaveEvent(QEvent *event) {
+    QWidget::leaveEvent(event);
+    armed_ = true;
 }
 
 QString edge_near(const QRect &frame, const QRect &available, int reach) {

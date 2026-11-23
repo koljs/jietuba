@@ -723,9 +723,11 @@ clipboard::ClipboardWindow *MainApp::ensure_clipboard_window() {
 void MainApp::open_clipboard_window() {
     if (update_preparing) return;
     try {
-        // Visible: the hotkey closes it, which also leaves the dock.
+        // Visible: the hotkey puts it away. A docked window keeps its edge and comes back there;
+        // an undocked one closes, and the close key is what leaves a dock.
         if (clipboard_window && clipboard_window->isVisible()) {
-            clipboard_window->close();
+            if (clipboard_window->is_docked()) clipboard_window->collapse_to_dock();
+            else clipboard_window->close();
             return;
         }
         // Docked and tucked away: it comes back at its edge, not at the cursor, so the edge and the

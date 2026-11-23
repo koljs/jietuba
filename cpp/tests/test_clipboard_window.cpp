@@ -2086,6 +2086,14 @@ private slots:
         QVERIFY(window->edge_for_release().isEmpty());
         window->config->set_clipboard_edge_dock(true);
         QCOMPARE(window->edge_for_release(), QString("left"));
+        // Docked, then dragged off the side: a popup again, which is the way back to one that
+        // follows the cursor.
+        window->finish_drag_for_test();
+        QVERIFY(window->is_docked());
+        window->move(available.center() - QPoint(window->width() / 2, window->height() / 2));
+        window->finish_drag_for_test();
+        QVERIFY(!window->is_docked());
+        QVERIFY(!window->edge_strip_for_test()->isVisible());
     }
 
     // The pointer on the strip brings the window back where it was docked, not at the pointer; the
@@ -2097,11 +2105,15 @@ private slots:
         window->dock_to_edge("left");
         const QRect docked = window->docked_rect();
         QWidget *strip = window->edge_strip_for_test();
-        window->dock_tick_for_test(strip->geometry().center());
+        QVERIFY(!window->isVisible());
+        // Arriving on the strip is the whole gesture: no click, no key, no shortcut.
+        QEnterEvent enter(QPointF(strip->rect().center()), QPointF(strip->mapToGlobal(strip->rect().center())), QPointF(strip->mapToGlobal(strip->rect().center())));
+        QApplication::sendEvent(strip, &enter);
         QTRY_VERIFY(window->isVisible());
         QCOMPARE(window->geometry(), docked);
         QVERIFY(!strip->isVisible());
-        window->dock_tick_for_test(window->geometry().center());
+        // The pointer is on the window now, so the pause that puts it away never starts.
+        window->note_pointer_returned();
         QTest::qWait(400);
         QVERIFY(window->isVisible());
     }
@@ -2112,19 +2124,21 @@ private slots:
         const QRect available = window->screen()->availableGeometry();
         window->move(available.left() + 3, available.top() + 60);
         window->dock_to_edge("left");
-        window->dock_tick_for_test(window->edge_strip_for_test()->geometry().center());
+        QWidget *strip = window->edge_strip_for_test();
+        QEnterEvent enter(QPointF(strip->rect().center()), QPointF(strip->mapToGlobal(strip->rect().center())), QPointF(strip->mapToGlobal(strip->rect().center())));
+        QApplication::sendEvent(strip, &enter);
         QTRY_VERIFY(window->isVisible());
-        const QPoint away = window->geometry().center() + QPoint(400, 400);
-        QVERIFY(!window->geometry().contains(away));
-        window->dock_tick_for_test(away);
+        // Out and back within the pause, the way a pointer crosses a window on its way elsewhere.
+        window->note_pointer_left();
         QTest::qWait(60);
-        window->dock_tick_for_test(window->geometry().center());
+        window->note_pointer_returned();
         QTest::qWait(400);
         QVERIFY(window->isVisible());
-        window->dock_tick_for_test(away);
+        // Gone for good, it tucks itself away and leaves the strip behind.
+        window->note_pointer_left();
         QTRY_VERIFY_WITH_TIMEOUT(!window->isVisible(), 2000);
         QVERIFY(window->is_docked());
-        QVERIFY(window->edge_strip_for_test()->isVisible());
+        QVERIFY(strip->isVisible());
     }
 
     // A paste closes the window but keeps the edge: the strip is back, and so is the window at the

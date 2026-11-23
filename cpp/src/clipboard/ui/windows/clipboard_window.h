@@ -151,10 +151,11 @@ public:
     void set_area_to_keep_clear(const QRect &area) { area_to_keep_clear_ = area; }
 
     // Edge dock. Dragging the window to a screen edge and letting go tucks it away as a strip on
-    // that edge; pointing at the strip brings it back to the same place. While it is tucked away
-    // the window itself is hidden, so the dock holds no keyboard focus: keys, Esc and the paste
-    // target stay with the window the user is in. A paste tucks it away again and keeps the dock;
-    // the close key or the close button leaves the dock, and the next open follows the cursor.
+    // that edge; arriving on the strip brings it back to the same place, and the pointer leaving
+    // the window for good puts it away again after a short pause. While it is tucked away the
+    // window itself is hidden, so the dock holds no keyboard focus: keys, Esc and the paste target
+    // stay with the window the user is in. A paste tucks it away again and keeps the dock; the
+    // close key or the close button leaves the dock, and the next open follows the cursor.
     bool is_docked() const { return !docked_edge_.isEmpty(); }
     QString docked_edge() const { return docked_edge_; }
     bool is_tucked_away() const { return is_docked() && !isVisible(); }
@@ -164,8 +165,11 @@ public:
     void undock();
     // The edge a released drag settles on, empty when it settles on none.
     QString edge_for_release() const;
-    // The pointer-driven tick, for tests; the real one reads the cursor.
-    void dock_tick_for_test(const QPoint &cursor) { dock_tick(cursor); }
+    // The pointer left the window, or came back: leaving starts the pause after which a docked
+    // window tucks itself away, coming back cancels it. The window's own enter and leave events
+    // call these, and so do the tests that need the timing without a real pointer.
+    void note_pointer_left();
+    void note_pointer_returned();
     // Settling the window where a drag let go, for tests: the real one runs on every drag release.
     void finish_drag_for_test() { finish_drag(); }
     QRect docked_rect() const { return docked_rect_; }
@@ -185,6 +189,7 @@ protected:
     void closeEvent(QCloseEvent *event) override;
     void changeEvent(QEvent *event) override;
     bool eventFilter(QObject *obj, QEvent *event) override;
+    void enterEvent(QEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
@@ -280,11 +285,12 @@ private:
     void position_on_show();
     void position_at_cursor();
     bool restore_previous_position();
-    // Edge dock: where a drag let go, the strip, and the tick that watches the pointer.
+    // Edge dock: where a drag let go, the strip, and the pause after the pointer leaves.
     void finish_drag();
     QRect docked_rect_for(const QString &edge) const;
-    void dock_tick(const QPoint &cursor);
-    void start_edge_timer();
+    void tuck_after_leave();
+    void start_typing_watch();
+    bool pointer_is_busy() const;
     void place_edge_handle();
     // Moves the window above or below area_to_keep_clear_ when it covers it.
     void keep_area_clear();
@@ -318,11 +324,10 @@ private:
     std::optional<QElapsedTimer> menu_close_time_;
     QTimer *search_timer_ = nullptr;
     // Edge dock: the edge and the rectangle the window takes while it is out, the strip left there
-    // when it is tucked away, and the timers that watch the pointer and the pause before tucking.
+    // when it is tucked away, and the pause between the pointer leaving and the window going.
     QString docked_edge_;
     QRect docked_rect_;
     EdgeHandle *edge_handle_ = nullptr;
-    QTimer *edge_timer_ = nullptr;
     QTimer *edge_collapse_timer_ = nullptr;
     // While the window is out, keys typed into it keep it out even with the pointer away.
     QElapsedTimer typing_timer_;

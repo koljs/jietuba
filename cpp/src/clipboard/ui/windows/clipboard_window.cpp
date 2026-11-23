@@ -32,6 +32,7 @@
 #include <QIcon>
 #include <QDesktopServices>
 #include <QDir>
+#include <QEnterEvent>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -54,11 +55,10 @@ namespace {
 // Direct picks take bare keys only: this app's simulated Ctrl+V comes back here while the window stays open, and as "paste item N" it would loop.
 constexpr Qt::KeyboardModifiers DIRECT_PICK_BLOCKERS = Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier;
 
-// Edge dock: how close to a side a drag must let go, how still the pointer must be before the
-// window tucks itself away again, and how often the pointer is looked at meanwhile.
+// Edge dock: how close to a side a drag must let go, and how long the pointer must stay away
+// before the window tucks itself away again.
 constexpr int EDGE_REACH = 24;
 constexpr int EDGE_TUCK_MS = 250;
-constexpr int EDGE_POLL_MS = 50;
 // Keys typed in the window keep it out this long after the last one, even with the pointer away.
 constexpr int EDGE_TYPING_GRACE_MS = 1500;
 
@@ -180,18 +180,14 @@ ClipboardWindow::ClipboardWindow(QWidget *parent)
     frameless_.init_frameless(this, 8);
     frameless_.on_drag_end = [this] { finish_drag(); };
 
-    // Edge dock: the strip that stands for the window while it is tucked away, and the two timers
-    // that watch the pointer and the pause before tucking. The strip takes no focus, so tucking the
-    // window away leaves the keyboard where it was.
+    // Edge dock: the strip that stands for the window while it is tucked away. The window itself
+    // is hidden then, so the strip is what the pointer arrives on to bring it back.
     edge_handle_ = new EdgeHandle;
     connect(edge_handle_, &EdgeHandle::hovered, this, [this] { expand_from_dock(); });
-    edge_timer_ = new QTimer(this);
-    edge_timer_->setInterval(EDGE_POLL_MS);
-    connect(edge_timer_, &QTimer::timeout, this, [this] { dock_tick(QCursor::pos()); });
     edge_collapse_timer_ = new QTimer(this);
     edge_collapse_timer_->setSingleShot(true);
     edge_collapse_timer_->setInterval(EDGE_TUCK_MS);
-    connect(edge_collapse_timer_, &QTimer::timeout, this, [this] { collapse_to_dock(); });
+    connect(edge_collapse_timer_, &QTimer::timeout, this, [this] { tuck_after_leave(); });
 
     auto *theme_manager = get_theme_manager();
     current_theme = theme_manager->get_current_theme();
@@ -1627,7 +1623,6 @@ void ClipboardWindow::hideEvent(QHideEvent *event) {
             edge_handle_->show();
             edge_handle_->raise();
         }
-        start_edge_timer();
     }
     if (QWidget *active_popup = QApplication::activePopupWidget()) active_popup->close();
 }
@@ -1664,9 +1659,9 @@ void ClipboardWindow::check_and_hide() {
     for (const QWidget *surface : {QApplication::activeWindow(), QApplication::activeModalWidget(), QApplication::activePopupWidget()})
         if (owns_window(surface)) return;
     // In resident mode the user closes it; pasting itself hands focus to the target window.
-    // A docked window is tucked away by the pointer leaving (see dock_tick), not by losing the
-    // focus: activateWindow() itself sends an activation change, and tucking on it would undo the
-    // very show that asked for the activation.
+    // A docked window is tucked away by the pointer leaving (see note_pointer_left), not by losing
+    // the focus: activateWindow() itself sends an activation change, and tucking on it would undo
+    // the very show that asked for the activation.
     if (!config->get_clipboard_close_after_paste()) return;
     hide();
 }
@@ -1674,7 +1669,8 @@ void ClipboardWindow::check_and_hide() {
 // ==================== Edge dock ====================
 
 // Where the drag let go decides whether, and where, the window docks: close to a side of the work
-// area it settles there, anywhere else it stays a popup at the cursor.
+// area it settles there, anywhere else it stays a popup at the cursor. A window dragged off its
+// edge leaves the dock, which is the way back to a popup that follows the cursor.
 QString ClipboardWindow::edge_for_release() const {
     if (!config || !config->get_clipboard_edge_dock()) return {};
     QScreen *screen = QGuiApplication::screenAt(geometry().center());
@@ -1702,8 +1698,13 @@ QRect ClipboardWindow::docked_rect_for(const QString &edge) const {
 
 QWidget *ClipboardWindow::edge_strip_for_test() const { return edge_handle_; }
 
-void ClipboardWindow::finish_drag() {    const auto edge = edge_for_release();
-    if (edge.isEmpty()) return;
+void ClipboardWindow::finish_drag() {
+    const auto edge = edge_for_release();
+    if (edge.isEmpty()) {
+        // Let go away from every side: a popup where it was dropped, and out of the dock.
+        undock();
+        return;
+    }
     dock_to_edge(edge);
 }
 
@@ -1725,15 +1726,12 @@ void ClipboardWindow::place_edge_handle() {
     edge_handle_->place(docked_edge_, docked_rect_);
 }
 
-void ClipboardWindow::start_edge_timer() {
-    if (!is_docked() || !edge_timer_) return;
-    if (!edge_timer_->isActive()) edge_timer_->start();
-    if (!typing_watch_) {
-        // Application-wide only while docked: the keys that keep the window out are the ones going
-        // into it, and those arrive at its children rather than at this widget.
-        typing_watch_ = true;
-        QApplication::instance()->installEventFilter(this);
-    }
+void ClipboardWindow::start_typing_watch() {
+    if (typing_watch_) return;
+    // Application-wide only while docked: the keys that keep the window out are the ones going
+    // into it, and those arrive at its children rather than at this widget.
+    typing_watch_ = true;
+    QApplication::instance()->installEventFilter(this);
 }
 
 void ClipboardWindow::collapse_to_dock() {
@@ -1747,25 +1745,23 @@ void ClipboardWindow::collapse_to_dock() {
         edge_handle_->raise();
     }
     if (isVisible()) hide();
-    start_edge_timer();
 }
 
 void ClipboardWindow::expand_from_dock() {
     if (!is_docked()) return;
     edge_collapse_timer_->stop();
+    start_typing_watch();
     if (edge_handle_) edge_handle_->hide();
     setGeometry(docked_rect_);
     if (!isVisible()) show();
     raise();
     activateWindow();
-    start_edge_timer();
 }
 
 void ClipboardWindow::undock() {
     docked_edge_.clear();
     docked_rect_ = {};
     if (edge_collapse_timer_) edge_collapse_timer_->stop();
-    if (edge_timer_) edge_timer_->stop();
     if (edge_handle_) edge_handle_->hide();
     if (typing_watch_) {
         typing_watch_ = false;
@@ -1773,39 +1769,41 @@ void ClipboardWindow::undock() {
     }
 }
 
-void ClipboardWindow::dock_tick(const QPoint &cursor) {
-    if (!is_docked()) {
-        if (edge_timer_) edge_timer_->stop();
-        return;
-    }
-    if (!isVisible()) {
-        // Tucked away: only the strip can bring it back, and only from the edge it is on.
-        if (edge_handle_ && edge_handle_->hit_rect().contains(cursor)) expand_from_dock();
-        return;
-    }
-    if (geometry().contains(cursor)) {
-        edge_collapse_timer_->stop();
-        return;
-    }
-    // Just typed: a pointer that wandered off while the user searches does not tuck the window away.
-    if (typing_timer_.isValid() && typing_timer_.elapsed() < EDGE_TYPING_GRACE_MS) {
-        edge_collapse_timer_->stop();
-        return;
-    }
-    // A menu, a confirmation or quick edit is a window of its own, and the pointer is usually away
-    // from the window while one is open.
-    if (quick_edit_popup && quick_edit_popup->is_open()) {
-        edge_collapse_timer_->stop();
-        return;
-    }
+// The pointer is at work on the window even though it is off it: dragging the window, dragging an
+// item out of it, a menu or the quick edit open, the preview shown over it. The pointer steps
+// aside there but the user has not left, so none of it counts as leaving the window.
+bool ClipboardWindow::pointer_is_busy() const {
+    if (frameless_.is_dragging() || dragging_) return true;
+    if (quick_edit_popup && quick_edit_popup->is_open()) return true;
+    if (auto *preview = PreviewPopup::instance(); preview && preview->isVisible()) return true;
     for (const QWidget *surface : {QApplication::activePopupWidget(), QApplication::activeModalWidget()})
-        if (surface && owns_window(surface)) {
-            edge_collapse_timer_->stop();
-            return;
-        }
-    // start() restarts a running timer, so it is only started when idle: the pause the user gets is
-    // the one they earned by leaving.
-    if (!edge_collapse_timer_->isActive()) edge_collapse_timer_->start();
+        if (surface && owns_window(surface)) return true;
+    return false;
+}
+
+// The pointer left: after a pause the window tucks itself away. The pause is the whole point of
+// the gesture — a pointer crossing the window on its way somewhere else must not put it away, and
+// a pointer that comes back (or starts typing) calls the pause off.
+void ClipboardWindow::note_pointer_left() {
+    if (!is_docked() || !isVisible()) return;
+    if (pointer_is_busy()) return;
+    edge_collapse_timer_->start();
+}
+
+void ClipboardWindow::note_pointer_returned() {
+    if (edge_collapse_timer_) edge_collapse_timer_->stop();
+}
+
+void ClipboardWindow::tuck_after_leave() {
+    if (!is_docked() || !isVisible() || pointer_is_busy()) return;
+    // Just typed: a pointer that wandered off while the user searches does not tuck the window
+    // away. Look again once the pause after the last key is over, so a window the user has left
+    // for good still goes.
+    if (typing_timer_.isValid() && typing_timer_.elapsed() < EDGE_TYPING_GRACE_MS) {
+        edge_collapse_timer_->start(static_cast<int>(EDGE_TYPING_GRACE_MS - typing_timer_.elapsed()));
+        return;
+    }
+    collapse_to_dock();
 }
 
 bool ClipboardWindow::is_draggable_area(QObject *widget) const { return group_bar && group_bar->bar_widget && widget == group_bar->bar_widget; }
@@ -1858,9 +1856,17 @@ bool ClipboardWindow::eventFilter(QObject *obj, QEvent *event) {
     return QWidget::eventFilter(obj, event);
 }
 
+void ClipboardWindow::enterEvent(QEnterEvent *event) {
+    QWidget::enterEvent(event);
+    note_pointer_returned();
+}
+
 void ClipboardWindow::leaveEvent(QEvent *event) {
     if (!frameless_.is_dragging() && frameless_.resize_edge().isEmpty()) unsetCursor();
     QWidget::leaveEvent(event);
+    // A child taking the hover sends this window a leave of its own; only a pointer that is off the
+    // window altogether counts as leaving it.
+    if (!rect().contains(mapFromGlobal(QCursor::pos()))) note_pointer_left();
 }
 
 void ClipboardWindow::keyPressEvent(QKeyEvent *event) {
