@@ -21,6 +21,7 @@
 #include <QDateEdit>
 #include <QDesktopServices>
 #include <QDrag>
+#include <QEnterEvent>
 #include <QFile>
 #include <QKeyEvent>
 #include <QMimeData>
@@ -2024,7 +2025,8 @@ private slots:
         const QRect available = window->screen()->availableGeometry();
         window->move(available.left() + 4, available.top() + 120);
         QCOMPARE(window->edge_for_release(), QString("left"));
-        window->dock_to_edge(window->edge_for_release());
+        // The gesture itself: what a drag release does.
+        window->finish_drag_for_test();
         QVERIFY(window->is_docked());
         QVERIFY(window->is_tucked_away());
         QVERIFY(!window->isVisible());
@@ -2037,6 +2039,39 @@ private slots:
         QCOMPARE(strip->focusPolicy(), Qt::NoFocus);
         QVERIFY(strip->windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus));
         QVERIFY(!window->isActiveWindow());
+        // Paints as a strip of the edge, not as a window: the grab is the only thing it draws.
+        QVERIFY(!strip->grab().isNull());
+    }
+
+    // A horizontal side works the same way, and the pointer arriving on the strip is enough on its own.
+    void theTopEdgeDocksHorizontallyAndThePointerArrivingIsEnough() {
+        auto *window = open_window();
+        const QRect available = window->screen()->availableGeometry();
+        window->move(available.left() + 120, available.top() + 3);
+        QCOMPARE(window->edge_for_release(), QString("top"));
+        window->finish_drag_for_test();
+        QWidget *strip = window->edge_strip_for_test();
+        QVERIFY(strip && strip->isVisible());
+        QCOMPARE(strip->geometry().top(), available.top());
+        QVERIFY(strip->width() > strip->height());
+        QVERIFY(!strip->grab().isNull());
+        QEnterEvent enter(QPointF(strip->rect().center()), QPointF(strip->mapToGlobal(strip->rect().center())), QPointF(strip->mapToGlobal(strip->rect().center())));
+        QApplication::sendEvent(strip, &enter);
+        QTRY_VERIFY(window->isVisible());
+        QCOMPARE(window->geometry(), window->docked_rect());
+    }
+
+    // Turning the setting off while docked puts the window back to being a popup at the cursor.
+    void turningTheSettingOffLeavesTheDock() {
+        auto *window = open_window();
+        const QRect available = window->screen()->availableGeometry();
+        window->move(available.left() + 3, available.top() + 60);
+        window->finish_drag_for_test();
+        QVERIFY(window->is_docked());
+        window->config->set_clipboard_edge_dock(false);
+        window->load_settings();
+        QVERIFY(!window->is_docked());
+        QVERIFY(!window->edge_strip_for_test()->isVisible());
     }
 
     // A drag that lets go away from every side leaves a popup, and the switch turns the gesture off.

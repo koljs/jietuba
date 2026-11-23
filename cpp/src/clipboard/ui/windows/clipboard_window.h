@@ -166,6 +166,8 @@ public:
     QString edge_for_release() const;
     // The pointer-driven tick, for tests; the real one reads the cursor.
     void dock_tick_for_test(const QPoint &cursor) { dock_tick(cursor); }
+    // Settling the window where a drag let go, for tests: the real one runs on every drag release.
+    void finish_drag_for_test() { finish_drag(); }
     QRect docked_rect() const { return docked_rect_; }
     // The strip left on the edge while the window is tucked away, for tests; null before one exists.
     QWidget *edge_strip_for_test() const;
