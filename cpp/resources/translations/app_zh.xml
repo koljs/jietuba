@@ -7602,6 +7602,14 @@ Replace it?</source>
         <source>Where the clipboard window appears when it opens</source>
         <translation>剪贴板窗口打开时出现的位置</translation>
     </message>
+    <message>
+        <source>Edge Dock</source>
+        <translation>贴边停靠</translation>
+    </message>
+    <message>
+        <source>Drag the window to a screen edge and let go to tuck it into a thin strip there; point at the strip to bring it back. A tucked window holds no keyboard focus and keeps the edge after pasting; Esc leaves it.</source>
+        <translation>把窗口拖到屏幕边缘松手，就收成那条边上的一条细边；鼠标指到细边即可叫回来。收起时不占键盘焦点，粘贴后仍留在原边，按 Esc 才离开。</translation>
+    </message>
 </context>
 <!-- ========== Read Aloud Settings ========== -->
 <context>

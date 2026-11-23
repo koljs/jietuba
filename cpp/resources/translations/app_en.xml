@@ -7554,6 +7554,14 @@ Replace it?</translation>
         <source>Where the clipboard window appears when it opens</source>
         <translation>Where the clipboard window appears when it opens</translation>
     </message>
+    <message>
+        <source>Edge Dock</source>
+        <translation>Edge Dock</translation>
+    </message>
+    <message>
+        <source>Drag the window to a screen edge and let go to tuck it into a thin strip there; point at the strip to bring it back. A tucked window holds no keyboard focus and keeps the edge after pasting; Esc leaves it.</source>
+        <translation>Drag the window to a screen edge and let go to tuck it into a thin strip there; point at the strip to bring it back. A tucked window holds no keyboard focus and keeps the edge after pasting; Esc leaves it.</translation>
+    </message>
 </context>
 <!-- ========== Read Aloud Settings ========== -->
 <context>

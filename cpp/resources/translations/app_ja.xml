@@ -7615,6 +7615,14 @@ Replace it?</source>
         <source>Where the clipboard window appears when it opens</source>
         <translation>クリップボードウィンドウを開いたときに表示する位置</translation>
     </message>
+    <message>
+        <source>Edge Dock</source>
+        <translation>端にドッキング</translation>
+    </message>
+    <message>
+        <source>Drag the window to a screen edge and let go to tuck it into a thin strip there; point at the strip to bring it back. A tucked window holds no keyboard focus and keeps the edge after pasting; Esc leaves it.</source>
+        <translation>ウィンドウを画面の端までドラッグして離すと、その端に細い帯として収まります。帯にポインターを合わせると戻ります。収まっている間はキーボードフォーカスを取らず、貼り付けても端に残り、Esc で解除します。</translation>
+    </message>
 </context>
 <!-- ========== Read Aloud Settings ========== -->
 <context>

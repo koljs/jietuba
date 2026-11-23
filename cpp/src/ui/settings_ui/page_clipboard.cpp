@@ -469,6 +469,7 @@ void build_separator_card(SettingsDialog *dialog, SettingsCardGroup *grp) {
 
 const std::set<QString> CLIPBOARD_BEHAVIOR_KEYS = {
     "clipboard_open_position", "clipboard_group_bar_position", "clipboard_preserve_search", "clipboard_show_metadata",
+    "clipboard_edge_dock",
     "clipboard_display_lines", "clipboard_image_size", "clipboard_hide_grouped_in_history", "clipboard_auto_paste",
     "clipboard_close_after_paste", "clipboard_move_to_top_on_paste", "clipboard_paste_with_html", "clipboard_multi_paste_order",
     "clipboard_multi_paste_keep_merged", "clipboard_record_private",
@@ -522,6 +523,10 @@ QWidget *create_clipboard_page(SettingsDialog *dialog) {
     dialog->behavior_controls.emplace_back("clipboard_open_position", position_combo);
     position_card->addControl(position_combo);
     grp_basic->addSettingCard(position_card);
+    add_switch_card(dialog, grp_basic, FluentIcon::Pin, "Edge Dock",
+                    "Drag the window to a screen edge and let go to tuck it into a thin strip there; point at the strip to bring it back. "
+                    "A tucked window holds no keyboard focus and keeps the edge after pasting; Esc leaves it.",
+                    "clipboard_edge_dock");
 
     auto *bar_card = new SettingCard(FluentIcon::Layout, dialog->tr_text("Group Bar Position"), dialog->tr_text("Where the group bar sits in the clipboard window"), grp_basic);
     choice_combo(dialog, bar_card, "clipboard_group_bar_position",
