@@ -1663,13 +1663,10 @@ void ClipboardWindow::check_and_hide() {
     // Confirmations and menus activate their own top-level windows, which still belong to the clipboard window.
     for (const QWidget *surface : {QApplication::activeWindow(), QApplication::activeModalWidget(), QApplication::activePopupWidget()})
         if (owns_window(surface)) return;
-    // Docked: losing the pointer or the focus tucks it away instead of closing it, and the strip
-    // brings it back where it was.
-    if (is_docked()) {
-        collapse_to_dock();
-        return;
-    }
     // In resident mode the user closes it; pasting itself hands focus to the target window.
+    // A docked window is tucked away by the pointer leaving (see dock_tick), not by losing the
+    // focus: activateWindow() itself sends an activation change, and tucking on it would undo the
+    // very show that asked for the activation.
     if (!config->get_clipboard_close_after_paste()) return;
     hide();
 }

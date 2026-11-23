@@ -2132,20 +2132,21 @@ private slots:
     void pastingKeepsTheEdgeAndEscapingLeavesIt() {
         add_texts({"edge paste"});
         auto *window = open_window();
+        QTRY_COMPARE(window->list_widget->count(), 1);
         window->config->set_clipboard_close_after_paste(true);
         const QRect available = window->screen()->availableGeometry();
         window->move(available.left() + 3, available.top() + 60);
         window->dock_to_edge("left");
         const QRect docked = window->docked_rect();
-        window->expand_from_dock();
+        // Pasting from the tucked-away window closes it again; the edge stays.
         QVERIFY(key(Qt::Key_1));
         QTRY_COMPARE(env_.pastes.size(), 1);
         QTRY_VERIFY(!window->isVisible());
         QVERIFY(window->is_docked());
-        QTRY_VERIFY(window->edge_strip_for_test()->isVisible());
+        QVERIFY(window->edge_strip_for_test()->isVisible());
+
         window->expand_from_dock();
         QCOMPARE(window->geometry(), docked);
-
         QVERIFY(key(Qt::Key_Escape));
         QVERIFY(!window->is_docked());
         QTRY_VERIFY(!window->edge_strip_for_test()->isVisible());
