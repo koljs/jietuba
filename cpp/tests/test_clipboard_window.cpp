@@ -7,6 +7,7 @@
 #include "clipboard/ui/widgets/item_drag.h"
 #include "clipboard/ui/widgets/selection_bar.h"
 #include "clipboard/ui/widgets/quick_edit_popup.h"
+#include "clipboard/ui/windows/edge_handle.h"
 #include "core/i18n.h"
 #include "core/platform_utils.h"
 #include "core/ui_scale.h"
@@ -20,6 +21,7 @@
 #include <QDateEdit>
 #include <QDesktopServices>
 #include <QDrag>
+#include <QEnterEvent>
 #include <QFile>
 #include <QKeyEvent>
 #include <QMimeData>
@@ -177,6 +179,7 @@ private slots:
         env_.config->set_clipboard_multi_paste_keep_merged(false);
         env_.config->set_clipboard_group_bar_position("right");
         env_.config->set_clipboard_open_position("cursor");
+        env_.config->set_clipboard_edge_dock(true);
         env_.config->set_inapp_clipboard_pick_mode("both");
         urls_.urls.clear();
     }
@@ -1997,6 +2000,171 @@ private slots:
         move_mouse(row_pos);
         QTRY_VERIFY(preview->isVisible());
         QCOMPARE(window->item_delegate->cursor_id(), std::optional<qint64>(ids[1]));
+    }
+
+    // ==================== Edge dock ====================
+
+    // Only a side the window rests against counts, and the work area's side is what it rests on:
+    // the taskbar's strip is not somewhere a window can be docked.
+    void onlyTheSideAFrameRestsAgainstCounts() {
+        const QRect available(0, 0, 1000, 800);
+        QCOMPARE(edge_near(QRect(4, 100, 300, 400), available, 24), QString("left"));
+        QCOMPARE(edge_near(QRect(696, 100, 300, 400), available, 24), QString("right"));
+        QCOMPARE(edge_near(QRect(300, 3, 300, 400), available, 24), QString("top"));
+        QCOMPARE(edge_near(QRect(300, 397, 300, 400), available, 24), QString("bottom"));
+        // 24 past the side is a popup still; over the side counts as resting on it.
+        QCOMPARE(edge_near(QRect(25, 200, 300, 400), available, 24), QString());
+        QCOMPARE(edge_near(QRect(-40, 200, 300, 400), available, 24), QString("left"));
+        QCOMPARE(edge_near(QRect(300, 200, 300, 400), available, 24), QString());
+    }
+
+    // Letting go near an edge tucks the window into a strip there: the window itself is hidden, so
+    // it holds no keyboard focus and Esc belongs to the window the user is in.
+    void lettingGoNearAnEdgeTucksTheWindowIntoAStrip() {
+        auto *window = open_window();
+        const QRect available = window->screen()->availableGeometry();
+        window->move(available.left() + 4, available.top() + 120);
+        QCOMPARE(window->edge_for_release(), QString("left"));
+        // The gesture itself: what a drag release does.
+        window->finish_drag_for_test();
+        QVERIFY(window->is_docked());
+        QVERIFY(window->is_tucked_away());
+        QVERIFY(!window->isVisible());
+        QWidget *strip = window->edge_strip_for_test();
+        QVERIFY(strip);
+        QVERIFY(strip->isVisible());
+        QCOMPARE(strip->geometry().left(), available.left());
+        QCOMPARE(strip->geometry().top(), window->docked_rect().top());
+        // Nothing to type into and nothing to answer Esc: the strip never activates.
+        QCOMPARE(strip->focusPolicy(), Qt::NoFocus);
+        QVERIFY(strip->windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus));
+        QVERIFY(!window->isActiveWindow());
+        // Paints as a strip of the edge, not as a window: the grab is the only thing it draws.
+        QVERIFY(!strip->grab().isNull());
+    }
+
+    // A horizontal side works the same way, and the pointer arriving on the strip is enough on its own.
+    void theTopEdgeDocksHorizontallyAndThePointerArrivingIsEnough() {
+        auto *window = open_window();
+        const QRect available = window->screen()->availableGeometry();
+        window->move(available.left() + 120, available.top() + 3);
+        QCOMPARE(window->edge_for_release(), QString("top"));
+        window->finish_drag_for_test();
+        QWidget *strip = window->edge_strip_for_test();
+        QVERIFY(strip && strip->isVisible());
+        QCOMPARE(strip->geometry().top(), available.top());
+        QVERIFY(strip->width() > strip->height());
+        QVERIFY(!strip->grab().isNull());
+        QEnterEvent enter(QPointF(strip->rect().center()), QPointF(strip->mapToGlobal(strip->rect().center())), QPointF(strip->mapToGlobal(strip->rect().center())));
+        QApplication::sendEvent(strip, &enter);
+        QTRY_VERIFY(window->isVisible());
+        QCOMPARE(window->geometry(), window->docked_rect());
+    }
+
+    // Turning the setting off while docked puts the window back to being a popup at the cursor.
+    void turningTheSettingOffLeavesTheDock() {
+        auto *window = open_window();
+        const QRect available = window->screen()->availableGeometry();
+        window->move(available.left() + 3, available.top() + 60);
+        window->finish_drag_for_test();
+        QVERIFY(window->is_docked());
+        window->config->set_clipboard_edge_dock(false);
+        window->load_settings();
+        QVERIFY(!window->is_docked());
+        QVERIFY(!window->edge_strip_for_test()->isVisible());
+    }
+
+    // A drag that lets go away from every side leaves a popup, and the switch turns the gesture off.
+    void lettingGoAwayFromEverySideLeavesAPopup() {
+        auto *window = open_window();
+        const QRect available = window->screen()->availableGeometry();
+        window->move(available.center() - QPoint(window->width() / 2, window->height() / 2));
+        QVERIFY(window->edge_for_release().isEmpty());
+        window->move(available.left() + 2, available.top() + 80);
+        QCOMPARE(window->edge_for_release(), QString("left"));
+        window->config->set_clipboard_edge_dock(false);
+        QVERIFY(window->edge_for_release().isEmpty());
+        window->config->set_clipboard_edge_dock(true);
+        QCOMPARE(window->edge_for_release(), QString("left"));
+        // Docked, then dragged off the side: a popup again, which is the way back to one that
+        // follows the cursor.
+        window->finish_drag_for_test();
+        QVERIFY(window->is_docked());
+        window->move(available.center() - QPoint(window->width() / 2, window->height() / 2));
+        window->finish_drag_for_test();
+        QVERIFY(!window->is_docked());
+        QVERIFY(!window->edge_strip_for_test()->isVisible());
+    }
+
+    // The pointer on the strip brings the window back where it was docked, not at the pointer; the
+    // pointer inside the window keeps it out.
+    void pointingAtTheStripBringsTheWindowBackAtItsEdge() {
+        auto *window = open_window();
+        const QRect available = window->screen()->availableGeometry();
+        window->move(available.left() + 3, available.top() + 90);
+        window->dock_to_edge("left");
+        const QRect docked = window->docked_rect();
+        QWidget *strip = window->edge_strip_for_test();
+        QVERIFY(!window->isVisible());
+        // Arriving on the strip is the whole gesture: no click, no key, no shortcut.
+        QEnterEvent enter(QPointF(strip->rect().center()), QPointF(strip->mapToGlobal(strip->rect().center())), QPointF(strip->mapToGlobal(strip->rect().center())));
+        QApplication::sendEvent(strip, &enter);
+        QTRY_VERIFY(window->isVisible());
+        QCOMPARE(window->geometry(), docked);
+        QVERIFY(!strip->isVisible());
+        // The pointer is on the window now, so the pause that puts it away never starts.
+        window->note_pointer_returned();
+        QTest::qWait(400);
+        QVERIFY(window->isVisible());
+    }
+
+    // Leaving the window tucks it away after a pause; coming back inside during the pause keeps it out.
+    void thePointerLeavingTucksItAwayAfterAPause() {
+        auto *window = open_window();
+        const QRect available = window->screen()->availableGeometry();
+        window->move(available.left() + 3, available.top() + 60);
+        window->dock_to_edge("left");
+        QWidget *strip = window->edge_strip_for_test();
+        QEnterEvent enter(QPointF(strip->rect().center()), QPointF(strip->mapToGlobal(strip->rect().center())), QPointF(strip->mapToGlobal(strip->rect().center())));
+        QApplication::sendEvent(strip, &enter);
+        QTRY_VERIFY(window->isVisible());
+        // Out and back within the pause, the way a pointer crosses a window on its way elsewhere.
+        window->note_pointer_left();
+        QTest::qWait(60);
+        window->note_pointer_returned();
+        QTest::qWait(400);
+        QVERIFY(window->isVisible());
+        // Gone for good, it tucks itself away and leaves the strip behind.
+        window->note_pointer_left();
+        QTRY_VERIFY_WITH_TIMEOUT(!window->isVisible(), 2000);
+        QVERIFY(window->is_docked());
+        QVERIFY(strip->isVisible());
+    }
+
+    // A paste closes the window but keeps the edge: the strip is back, and so is the window at the
+    // same place next time. Esc, which is not a paste, leaves the dock.
+    void pastingKeepsTheEdgeAndEscapingLeavesIt() {
+        add_texts({"edge paste"});
+        auto *window = open_window();
+        QTRY_COMPARE(window->list_widget->count(), 1);
+        window->config->set_clipboard_close_after_paste(true);
+        const QRect available = window->screen()->availableGeometry();
+        window->move(available.left() + 3, available.top() + 60);
+        window->dock_to_edge("left");
+        const QRect docked = window->docked_rect();
+        // Pasting from the tucked-away window closes it again; the edge stays.
+        QVERIFY(key(Qt::Key_1));
+        QTRY_COMPARE(env_.pastes.size(), 1);
+        QTRY_VERIFY(!window->isVisible());
+        QVERIFY(window->is_docked());
+        QVERIFY(window->edge_strip_for_test()->isVisible());
+
+        window->expand_from_dock();
+        QCOMPARE(window->geometry(), docked);
+        QVERIFY(key(Qt::Key_Escape));
+        QVERIFY(!window->is_docked());
+        QTRY_VERIFY(!window->edge_strip_for_test()->isVisible());
+        QVERIFY(!window->isVisible());
     }
 };
 

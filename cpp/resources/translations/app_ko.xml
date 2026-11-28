@@ -7604,6 +7604,14 @@ Replace it?</source>
         <source>Where the clipboard window appears when it opens</source>
         <translation>클립보드 창이 열릴 때 표시되는 위치</translation>
     </message>
+    <message>
+        <source>Edge Dock</source>
+        <translation>가장자리 도킹</translation>
+    </message>
+    <message>
+        <source>Drag the window to a screen edge and let go to tuck it into a thin strip there; point at the strip to bring it back. A tucked window holds no keyboard focus and keeps the edge after pasting; Esc leaves it.</source>
+        <translation>창을 화면 가장자리로 끌어다 놓으면 그 가장자리에 얇은 띠로 접힙니다. 띠에 포인터를 대면 다시 나타납니다. 접힌 동안에는 키보드 포커스를 차지하지 않고, 붙여넣기 후에도 가장자리에 남으며 Esc로 해제합니다.</translation>
+    </message>
 </context>
 <!-- ========== Read Aloud Settings ========== -->
 <context>

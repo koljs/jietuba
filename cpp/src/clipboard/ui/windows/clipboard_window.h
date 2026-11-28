@@ -33,6 +33,7 @@ class ToolSettingsManager;
 namespace jietuba::clipboard {
 class ClipboardItemDelegate;
 class ClipboardMouseController;
+class EdgeHandle;
 class SelectionBar;
 class ClipboardWindow;
 class GroupBar;
@@ -149,6 +150,32 @@ public:
     // capture; empty for none.
     void set_area_to_keep_clear(const QRect &area) { area_to_keep_clear_ = area; }
 
+    // Edge dock. Dragging the window to a screen edge and letting go tucks it away as a strip on
+    // that edge; arriving on the strip brings it back to the same place, and the pointer leaving
+    // the window for good puts it away again after a short pause. While it is tucked away the
+    // window itself is hidden, so the dock holds no keyboard focus: keys, Esc and the paste target
+    // stay with the window the user is in. A paste tucks it away again and keeps the dock; the
+    // close key or the close button leaves the dock, and the next open follows the cursor.
+    bool is_docked() const { return !docked_edge_.isEmpty(); }
+    QString docked_edge() const { return docked_edge_; }
+    bool is_tucked_away() const { return is_docked() && !isVisible(); }
+    void dock_to_edge(const QString &edge);
+    void expand_from_dock();
+    void collapse_to_dock();
+    void undock();
+    // The edge a released drag settles on, empty when it settles on none.
+    QString edge_for_release() const;
+    // The pointer left the window, or came back: leaving starts the pause after which a docked
+    // window tucks itself away, coming back cancels it. The window's own enter and leave events
+    // call these, and so do the tests that need the timing without a real pointer.
+    void note_pointer_left();
+    void note_pointer_returned();
+    // Settling the window where a drag let go, for tests: the real one runs on every drag release.
+    void finish_drag_for_test() { finish_drag(); }
+    QRect docked_rect() const { return docked_rect_; }
+    // The strip left on the edge while the window is tucked away, for tests; null before one exists.
+    QWidget *edge_strip_for_test() const;
+
 signals:
     void item_pasted(qint64 item_id);
     void closed();
@@ -162,6 +189,7 @@ protected:
     void closeEvent(QCloseEvent *event) override;
     void changeEvent(QEvent *event) override;
     bool eventFilter(QObject *obj, QEvent *event) override;
+    void enterEvent(QEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
@@ -257,6 +285,13 @@ private:
     void position_on_show();
     void position_at_cursor();
     bool restore_previous_position();
+    // Edge dock: where a drag let go, the strip, and the pause after the pointer leaves.
+    void finish_drag();
+    QRect docked_rect_for(const QString &edge) const;
+    void tuck_after_leave();
+    void start_typing_watch();
+    bool pointer_is_busy() const;
+    void place_edge_handle();
     // Moves the window above or below area_to_keep_clear_ when it covers it.
     void keep_area_clear();
     void check_and_hide();
@@ -288,6 +323,17 @@ private:
     QPointer<QMenu> settings_menu_;
     std::optional<QElapsedTimer> menu_close_time_;
     QTimer *search_timer_ = nullptr;
+    // Edge dock: the edge and the rectangle the window takes while it is out, the strip left there
+    // when it is tucked away, and the pause between the pointer leaving and the window going.
+    QString docked_edge_;
+    QRect docked_rect_;
+    EdgeHandle *edge_handle_ = nullptr;
+    QTimer *edge_collapse_timer_ = nullptr;
+    // While the window is out, keys typed into it keep it out even with the pointer away.
+    QElapsedTimer typing_timer_;
+    bool typing_watch_ = false;
+    // A paste closes the window but must not lose the dock; Esc and the close button must.
+    bool closing_after_paste_ = false;
     std::unique_ptr<ClipboardShortcutHandler> shortcut_handler_;
 };
 

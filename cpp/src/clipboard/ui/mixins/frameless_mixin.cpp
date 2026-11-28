@@ -115,7 +115,10 @@ bool FramelessMixin::handle_event(QObject *obj, QEvent *event) {
     }
     if (event_type == QEvent::MouseButtonRelease && static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
         if (!resize_edge_.isEmpty() || is_dragging_) {
+            // Read before reset(): the owner decides where to settle the window from where it was left.
+            const bool moved = is_dragging_;
             reset();
+            if (moved && on_drag_end) on_drag_end();
             return true;
         }
     }
