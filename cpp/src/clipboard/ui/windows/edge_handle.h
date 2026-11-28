@@ -39,7 +39,9 @@ signals:
 private:
     QString edge_ = "left";
     QRect docked_;
-    QColor accent_ = QColor(111, 143, 171);
+    // Left invalid until the window hands over the theme accent; the strip falls back to the
+    // palette's highlight until then, so no colour lives in this file.
+    QColor accent_;
     // A strip that appears under the pointer is not something the pointer arrived on — docking
     // puts the pointer on it, and a window that jumped back the moment the mouse moved would make
     // the gesture useless. It has to be left once before hovering it counts.

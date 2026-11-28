@@ -4,6 +4,7 @@
 #include <QEnterEvent>
 #include <QGuiApplication>
 #include <QPainter>
+#include <QPalette>
 #include <QScreen>
 #include <algorithm>
 
@@ -60,13 +61,15 @@ void EdgeHandle::paintEvent(QPaintEvent *) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     const double radius = scaled(STRIP_RADIUS);
-    QColor strip = accent_;
+    // The theme's accent, or the palette's highlight before the window has handed one over.
+    const QColor accent = accent_.isValid() ? accent_ : palette().color(QPalette::Highlight);
+    QColor strip = accent;
     strip.setAlpha(70);
     painter.setPen(Qt::NoPen);
     painter.setBrush(strip);
     painter.drawRoundedRect(QRectF(rect()).adjusted(0, 0, -0.5, -0.5), radius, radius);
     // A grip in the middle of the span: something to aim at, and the only part at full strength.
-    QColor grip = accent_;
+    QColor grip = accent;
     grip.setAlpha(215);
     painter.setBrush(grip);
     if (edge_ == "left" || edge_ == "right") {
